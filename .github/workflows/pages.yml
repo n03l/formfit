@@ -1,0 +1,47 @@
+# Publishes the game to GitHub Pages on every push to main.
+name: Publish to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect the app files
+        run: |
+          mkdir -p _site/icons
+          cp index.html sw.js manifest.webmanifest _site/
+          cp icons/icon.svg icons/icon-192.png icons/icon-512.png icons/icon-maskable-512.png icons/apple-touch-icon.png _site/icons/
+          # Fail if the service worker's offline list names a file that isn't published.
+          for f in $(grep -oE "'\./[^']*'" sw.js | tr -d "'" | sed 's#^\./##'); do
+            [ -z "$f" ] || [ -f "_site/$f" ] || { echo "Not published but cached by sw.js: $f"; exit 1; }
+          done
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'">
+<title>Formfit</title>
+<meta name="description" content="Drag blocks onto an 8×8 board and clear rows and columns.">
+<meta name="theme-color" content="#0d0e22">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Formfit">
+<style>
+  :root {
+    --bg: #0d0e22;
+    --bg2: #1b1442;
+    --panel: #181a3b;
+    --panel-edge: #2c2f66;
+    --cell-empty: #22254d;
+    --text: #eef0ff;
+    --muted: #9ea1d4;
+    --accent: #7cf7ff;
+    --accent2: #ff7ad9;
+    --gap: 4px;
+    --pad: 8px;
+    --board: max(232px, min(92vw, calc(100vh - 350px), 480px));
+    --cell: calc((var(--board) - 2 * var(--pad) - 7 * var(--gap)) / 8);
+    --mini: calc(var(--cell) * 0.5);
+  }
+  @supports (height: 100dvh) {
+    :root { --board: max(232px, min(92vw, calc(100dvh - 350px), 480px)); }
+  }
+  .c0 { --c: #ff6b9a; }
+  .c1 { --c: #ffb35c; }
+  .c2 { --c: #ffe66b; }
+  .c3 { --c: #6bf2a4; }
+  .c4 { --c: #5ce1ff; }
+  .c5 { --c: #8f8bff; }
+  .c6 { --c: #d97bff; }
+  .c7 { --c: #7d82a8; }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, var(--bg2), var(--bg) 70%) fixed, var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  .app {
+    width: var(--board);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: calc(14px + env(safe-area-inset-top)) 0 calc(20px + env(safe-area-inset-bottom));
+  }
+
+  /* Header */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .icon-btn {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .icon-btn:hover { border-color: var(--accent); }
+  .tools { display: flex; gap: 8px; }
+  .levelbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+  }
+  .levelbar .icon-btn { font-size: 22px; font-weight: 800; line-height: 1; }
+  .icon-btn:disabled { opacity: 0.3; cursor: default; border-color: var(--panel-edge); }
+  .lvl { flex: 1; min-width: 0; text-align: center; }
+  .lvl-num { font-size: 18px; font-weight: 800; color: var(--accent); }
+  .lvl-sub { font-size: 12px; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 6px 8px;
+    text-align: center;
+    min-width: 0;
+  }
+  .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+  .stat .value {
+    font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #score { color: var(--accent); }
+  #combo.on { color: var(--accent2); text-shadow: 0 0 10px var(--accent2); }
+
+  /* Board */
+  .board {
+    position: relative;
+    width: var(--board);
+    height: var(--board);
+    padding: var(--pad);
+    display: grid;
+    grid-template-columns: repeat(8, var(--cell));
+    grid-template-rows: repeat(8, var(--cell));
+    gap: var(--gap);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(124, 247, 255, 0.08), inset 0 0 20px rgba(0, 0, 0, 0.35);
+    touch-action: none;
+  }
+  .cell { border-radius: 6px; background: var(--cell-empty); }
+  .filled, .ghost { background: var(--c); }
+  .filled {
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.4),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.25),
+      0 0 8px color-mix(in srgb, var(--c) 45%, transparent);
+  }
+  .cell.stone {
+    background: repeating-linear-gradient(135deg, #80859f 0 5px, #6c7190 5px 10px);
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+  }
+  .cell.ghost { opacity: 0.45; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5); }
+  .cell.will-clear.filled { filter: brightness(1.3) saturate(1.2); box-shadow: 0 0 14px var(--c); }
+  .cell.flash { animation: flash 0.45s ease-out; }
+  @keyframes flash {
+    0% { background: #fff; box-shadow: 0 0 20px #fff; transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+
+  /* Tray */
+  .tray {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    height: calc(var(--mini) * 5 + 28px);
+    touch-action: none;
+  }
+  .slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.06);
+    min-width: 0;
+  }
+  .slot.has-piece { cursor: grab; }
+  .slot.has-piece:hover { background: rgba(255, 255, 255, 0.06); }
+  .slot.nofit .piece { opacity: 0.3; filter: grayscale(0.7); }
+  .slot.dragging .piece { visibility: hidden; }
+  .slot.spin { position: relative; border: 1px solid rgba(92, 225, 255, 0.45); }
+  .slot.spin::after {
+    content: '↻';
+    position: absolute;
+    top: 4px; right: 8px;
+    font-size: 18px;
+    line-height: 1;
+    color: #5ce1ff;
+  }
+  .piece { display: grid; gap: calc(var(--gap) * 0.5); }
+  .piece .pc { border-radius: 3px; }
+  .piece.big { gap: var(--gap); }
+  .piece.big .pc { border-radius: 6px; }
+
+  .drag {
+    position: fixed;
+    left: 0; top: 0;
+    z-index: 50;
+    pointer-events: none;
+    transform-origin: 0 0;
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.5));
+    will-change: transform;
+  }
+  .drag.returning { transition: transform 0.22s cubic-bezier(.3, .7, .4, 1); }
+
+  /* Effects */
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; }
+  .float {
+    position: fixed;
+    z-index: 45;
+    pointer-events: none;
+    font-weight: 900;
+    font-size: 26px;
+    color: #fff;
+    text-shadow: 0 0 12px var(--accent), 0 2px 0 rgba(0, 0, 0, 0.4);
+    transform: translate(-50%, -50%);
+    animation: floatUp 1s ease-out forwards;
+    white-space: nowrap;
+  }
+  .float.combo { color: var(--accent2); font-size: 30px; text-shadow: 0 0 14px var(--accent2), 0 2px 0 rgba(0, 0, 0, 0.4); }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+    15% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%, -160%) scale(1); }
+  }
+
+  /* Game over */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    place-items: center;
+    padding: 16px;
+    background: rgba(5, 6, 20, 0.72);
+    backdrop-filter: blur(4px);
+  }
+  .overlay.show { display: grid; animation: fadeIn 0.3s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; } }
+  .card {
+    width: min(340px, 100%);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 0 60px rgba(255, 122, 217, 0.2);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 28px; color: var(--accent2); }
+  .card .big-score { font-size: 48px; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .card p { margin: 6px 0; color: var(--muted); }
+  #newBest { color: #ffe66b; font-weight: 800; }
+  .btn {
+    margin-top: 16px;
+    padding: 12px 28px;
+    border: 0;
+    border-radius: 999px;
+    font: inherit;
+    font-weight: 800;
+    font-size: 18px;
+    color: #0d0e22;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    cursor: pointer;
+  }
+  .btn:focus-visible, .icon-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="top">
+    <h1>FORMFIT</h1>
+    <div class="tools">
+      <button class="icon-btn" id="muteBtn" type="button" aria-label="Toggle sound" aria-pressed="false">🔊</button>
+      <button class="icon-btn" id="newBtn" type="button" aria-label="Restart level">↻</button>
+    </div>
+  </div>
+  <div class="levelbar">
+    <button class="icon-btn" id="levelDown" type="button" aria-label="Previous level">−</button>
+    <div class="lvl" aria-live="polite">
+      <div class="lvl-num" id="levelNum">Level 1</div>
+      <div class="lvl-sub" id="stonesLeft"></div>
+    </div>
+    <button class="icon-btn" id="levelUp" type="button" aria-label="Next level">+</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+    <div class="stat"><div class="label">Combo</div><div class="value" id="combo">–</div></div>
+  </div>
+  <div class="board" id="board" aria-label="Game board"></div>
+  <div class="tray" id="tray"></div>
+</main>
+
+<canvas id="fx"></canvas>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="goTitle">
+  <div class="card">
+    <h2 id="goTitle">Game Over</h2>
+    <p id="goLevel">Level 1</p>
+    <div class="big-score" id="finalScore">0</div>
+    <p id="newBest" hidden>New best score!</p>
+    <p>Best: <span id="finalBest">0</span></p>
+    <button class="btn" id="restartBtn" type="button">Restart</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+(() => {
+  const N = 8;
+  const PALETTE = ['#ff6b9a', '#ffb35c', '#ffe66b', '#6bf2a4', '#5ce1ff', '#8f8bff', '#d97bff'];
+  const KEY_BEST = 'formfit.best';
+  const KEY_STATE = 'formfit.state';
+  const KEY_MUTED = 'formfit.muted';
+  const KEY_LEVELS = 'formfit.levels';
+  const STONE = PALETTE.length; // board value for the grey obstacle blocks each level starts with
+  const STONE_COLOR = '#80859f';
+  const MAX_LEVEL = 999;
+  // Chance that a new set includes a piece able to clear a stone: always up to level 3, then fading out by level 8.
+  const helpChance = n => (n <= 3 ? 1 : Math.max(0, 1 - 0.2 * (n - 3)));
+  // Chance that a new set has one piece the player can rotate (tap it): rare early, more common from level 6.
+  const spinChance = n => Math.min(0.25, n <= 3 ? 0.05 : 0.05 * (n - 2));
+  const COMBO_WINDOW = 3; // placements allowed without a clear before the combo resets
+  const TAP_SLOP = 10; // px a pointer may move and still count as a tap (rotates a piece instead of dragging it)
+
+  // ---------- Storage (may be unavailable or hold tampered data) ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
+    remove(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
+  };
+
+  // ---------- Shapes ----------
+  function parseShape(s) {
+    const cells = [];
+    s.split('/').forEach((row, r) => [...row].forEach((ch, c) => { if (ch === 'X') cells.push([r, c]); }));
+    return cells;
+  }
+  function normalize(cells) {
+    const mr = Math.min(...cells.map(p => p[0]));
+    const mc = Math.min(...cells.map(p => p[1]));
+    return cells.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  }
+  function rotations(cells) {
+    const out = [];
+    const seen = new Set();
+    let cur = normalize(cells);
+    for (let i = 0; i < 4; i++) {
+      const key = JSON.stringify(cur);
+      if (!seen.has(key)) { seen.add(key); out.push(cur); }
+      cur = normalize(cur.map(([r, c]) => [c, -r]));
+    }
+    return out;
+  }
+  const rotateCW = cells => normalize(cells.map(([r, c]) => [c, -r]));
+  // [pattern, relative weight shared across its rotations, tier: e(asy) / m(edium) / h(ard)]
+  const BASES = [
+    ['X', 1.5, 'e'], ['XX', 2.5, 'e'], ['XXX', 3, 'e'], ['XXXX', 2, 'm'], ['XXXXX', 1.2, 'h'],
+    ['XX/XX', 3, 'e'], ['XXX/XXX', 1.6, 'm'], ['XXX/XXX/XXX', 1, 'h'],
+    ['X./XX', 2.5, 'e'], ['X../X../XXX', 1.4, 'h'],
+    ['X./X./XX', 2, 'm'], ['.X/.X/XX', 2, 'm'], ['XXX/.X.', 2, 'm'],
+    ['.XX/XX.', 1.3, 'm'], ['XX./.XX', 1.3, 'm'],
+    ['X./.X', 1.2, 'm'], ['X../.X./..X', 0.8, 'h'],
+    ['.X./XXX/.X.', 0.5, 'h'], ['X.X/XXX', 1, 'h'], ['XXXX/XXXX', 0.6, 'h'],
+    ['X./X./X./XX', 1, 'm'], ['.X/.X/.X/XX', 1, 'm'], ['XXX/.X./.X.', 0.8, 'h'],
+    ['XX/XX/X.', 1, 'm'], ['XX/XX/.X', 1, 'm'], ['X../XX./.XX', 0.8, 'h'],
+  ];
+  const SHAPES = [];
+  for (const [pattern, weight, tier] of BASES) {
+    const vs = rotations(parseShape(pattern));
+    for (const cells of vs) SHAPES.push({ cells, weight: weight / vs.length, tier });
+  }
+
+  // Levels 1-4 deal mostly easy pieces; from level 5 hard pieces get steadily more common.
+  function tierFactor(tier, lvl) {
+    if (tier === 'e') return lvl < 5 ? 1.5 - 0.125 * (lvl - 1) : Math.max(0.35, 1 - 0.07 * (lvl - 5));
+    if (tier === 'h') return lvl < 5 ? 0.25 + 0.1875 * (lvl - 1) : Math.min(3, 1 + 0.2 * (lvl - 5));
+    return 1;
+  }
+  // Weighted random shape for the level; with `keep`, only shapes it accepts (null if none).
+  function randomShape(lvl, keep) {
+    const weights = SHAPES.map(s => (keep && !keep(s.cells) ? 0 : s.weight * tierFactor(s.tier, lvl)));
+    const total = weights.reduce((a, b) => a + b, 0);
+    if (total === 0) return null;
+    let r = Math.random() * total;
+    for (let i = 0; i < SHAPES.length; i++) { r -= weights[i]; if (r <= 0 && weights[i] > 0) return SHAPES[i].cells; }
+    return SHAPES[weights.findLastIndex(w => w > 0)].cells;
+  }
+  function shapeSize(cells) {
+    let h = 0, w = 0;
+    for (const [r, c] of cells) { h = Math.max(h, r + 1); w = Math.max(w, c + 1); }
+    return { h, w };
+  }
+
+  // ---------- Game state ----------
+  let board, tray, score, best, combo, movesSinceClear, gameOver, bestAtStart;
+  let level = 1, unlocked = 1; // current level; highest level the player may pick (highest solved + 1)
+  let levelMoves = 0;          // placements in this attempt, to decide whether leaving needs a confirm
+  let advancing = false;       // between finishing a level and the next one appearing
+  let advanceTimer = null;
+
+  const emptyBoard = () => Array.from({ length: N }, () => Array(N).fill(null));
+
+  // Small seeded PRNG so every level always has the same stone layout.
+  function mulberry32(a) {
+    return () => {
+      a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const stoneCount = n => (n <= 8 ? 3 + 2 * (n - 1) : Math.min(17 + (n - 8), 30)); // +2 per level, then +1 from 9
+  // Stones per row/column: low early so every line still needs a few pieces, never 8 so no line starts full.
+  const maxPerLine = n => (n <= 4 ? 4 : n >= 8 ? 7 : 6);
+  // Rows/columns the stones are spread over: few early, more later, always enough to hold them all.
+  const targetLines = n => Math.min(8, Math.max(1 + Math.floor((n - 1) / 2), Math.ceil(stoneCount(n) / maxPerLine(n))));
+  function levelLayout(n) {
+    const rand = mulberry32(Math.imul(n, 2654435761) ^ 0x5eed);
+    const cap = maxPerLine(n);
+    const b = emptyBoard();
+    const rowCount = Array(N).fill(0), colCount = Array(N).fill(0);
+    // Pick the lines (rows and columns) that will hold the stones.
+    const lines = [];
+    for (let i = 0; i < N; i++) lines.push({ row: true, i }, { row: false, i });
+    for (let i = lines.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [lines[i], lines[j]] = [lines[j], lines[i]];
+    }
+    const chosen = lines.slice(0, targetLines(n));
+    const cellOf = (line, k) => (line.row ? [line.i, k] : [k, line.i]);
+    let placed = 0;
+    const place = (r, c) => {
+      if (placed >= stoneCount(n) || b[r][c] !== null || rowCount[r] >= cap || colCount[c] >= cap) return;
+      b[r][c] = STONE;
+      rowCount[r]++; colCount[c]++; placed++;
+    };
+    // Stones on a line come in solid runs, so the gaps are easy to fill: one run per line up to level 12, then
+    // two, then three from level 20, which leaves more, smaller gaps.
+    const runs = n < 13 ? 1 : n < 20 ? 2 : 3;
+    chosen.forEach((line, li) => {
+      let quota = Math.min(cap, Math.ceil((stoneCount(n) - placed) / (chosen.length - li)));
+      for (let run = 0; run < runs && quota > 0; run++) {
+        const len = Math.ceil(quota / (runs - run));
+        const start = Math.floor(rand() * (N - len + 1));
+        for (let k = start; k < start + len; k++) place(...cellOf(line, k));
+        quota -= len;
+      }
+    });
+    // Top up if runs overlapped: remaining stones go anywhere on the chosen lines.
+    const candidates = chosen.flatMap(line => [...Array(N).keys()].map(k => cellOf(line, k)));
+    for (let guard = 0; placed < stoneCount(n) && guard < 10000; guard++) {
+      place(...candidates[Math.floor(rand() * candidates.length)]);
+    }
+    return b;
+  }
+  const stonesLeft = () => board.reduce((n, row) => n + row.filter(v => v === STONE).length, 0);
+
+  function canPlace(cells, r0, c0) {
+    for (const [r, c] of cells) {
+      const rr = r0 + r, cc = c0 + c;
+      if (rr < 0 || rr >= N || cc < 0 || cc >= N || board[rr][cc] !== null) return false;
+    }
+    return true;
+  }
+  function fitsAnywhere(cells) {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (canPlace(cells, r, c)) return true;
+    return false;
+  }
+  // A rotatable piece fits if any of its rotations does.
+  const pieceFits = p => (p.spin ? rotations(p.cells) : [p.cells]).some(fitsAnywhere);
+  function fullLines(b) {
+    const rows = [], cols = [];
+    for (let i = 0; i < N; i++) {
+      if (b[i].every(v => v !== null)) rows.push(i);
+      if (b.every(row => row[i] !== null)) cols.push(i);
+    }
+    return { rows, cols };
+  }
+  // Can this piece go somewhere that completes a row or column containing a stone?
+  function clearsAStone(cells) {
+    for (let r0 = 0; r0 < N; r0++) {
+      for (let c0 = 0; c0 < N; c0++) {
+        if (!canPlace(cells, r0, c0)) continue;
+        const sim = board.map(row => row.slice());
+        for (const [r, c] of cells) sim[r0 + r][c0 + c] = 0;
+        const { rows, cols } = fullLines(sim);
+        if (rows.some(r => sim[r].includes(STONE)) || cols.some(c => sim.some(row => row[c] === STONE))) return true;
+      }
+    }
+    return false;
+  }
+  // Every set has a piece that fits; on early levels it usually also has one that can clear a stone.
+  // Sometimes one piece (with more than one orientation) can be rotated; that only adds ways to fit.
+  function newBatch() {
+    const batch = dealPieces();
+    const turnable = batch.filter(p => rotations(p.cells).length > 1);
+    if (turnable.length && Math.random() < spinChance(level)) {
+      turnable[Math.floor(Math.random() * turnable.length)].spin = true;
+    }
+    return batch;
+  }
+  function dealPieces() {
+    const helpful = stonesLeft() > 0 && Math.random() < helpChance(level);
+    let batch, fitting = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const colors = [...PALETTE.keys()].sort(() => Math.random() - 0.5);
+      batch = [0, 1, 2].map(i => ({ cells: randomShape(level), color: colors[i] }));
+      if (!batch.some(p => fitsAnywhere(p.cells))) continue;
+      if (!helpful || batch.some(p => clearsAStone(p.cells))) return batch;
+      fitting = fitting || batch;
+    }
+    if (helpful) {
+      const cells = randomShape(level, clearsAStone);
+      if (cells) {
+        const b = fitting || batch;
+        b[0] = { cells, color: b[0].color };
+        return b;
+      }
+    }
+    return fitting || batch;
+  }
+
+  // ---------- Persistence ----------
+  const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+
+  function cleanPiece(p) {
+    if (p === null) return null;
+    if (typeof p !== 'object' || Array.isArray(p)) throw new Error('bad piece');
+    if (!isInt(p.color, 0, PALETTE.length - 1)) throw new Error('bad color');
+    if (!Array.isArray(p.cells) || p.cells.length < 1 || p.cells.length > 25) throw new Error('bad cells');
+    const cells = p.cells.map(q => {
+      if (!Array.isArray(q) || q.length !== 2 || !isInt(q[0], 0, 4) || !isInt(q[1], 0, 4)) throw new Error('bad cell');
+      return [q[0], q[1]];
+    });
+    if (Object.prototype.hasOwnProperty.call(p, 'spin') && typeof p.spin !== 'boolean') throw new Error('bad spin');
+    return { cells: normalize(cells), color: p.color, spin: p.spin === true };
+  }
+  function loadState() {
+    try {
+      const raw = store.get(KEY_STATE);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+      if (!Array.isArray(s.board) || s.board.length !== N) return null;
+      const b = s.board.map(row => {
+        if (!Array.isArray(row) || row.length !== N) throw new Error('bad row');
+        return row.map(v => {
+          if (v === null) return null;
+          if (!isInt(v, 0, STONE)) throw new Error('bad value');
+          return v;
+        });
+      });
+      if (!Array.isArray(s.tray) || s.tray.length !== 3) return null;
+      const t = s.tray.map(cleanPiece);
+      if (!t.some(Boolean)) return null;
+      if (!isInt(s.score, 0, 1e12) || !isInt(s.combo, 0, 1e6) || !isInt(s.movesSinceClear, 0, COMBO_WINDOW)) return null;
+      if (!isInt(s.level, 1, unlocked) || !isInt(s.moves, 0, 1e6)) return null;
+      return { board: b, tray: t, score: s.score, combo: s.combo, movesSinceClear: s.movesSinceClear, level: s.level, moves: s.moves };
+    } catch {
+      return null;
+    }
+  }
+  function saveState() {
+    store.set(KEY_STATE, JSON.stringify({ v: 2, board, tray, score, combo, movesSinceClear, level, moves: levelMoves }));
+  }
+  function loadLevels() {
+    try {
+      const o = JSON.parse(store.get(KEY_LEVELS));
+      if (o && typeof o === 'object' && isInt(o.unlocked, 1, MAX_LEVEL) && isInt(o.level, 1, o.unlocked)) {
+        return { level: o.level, unlocked: o.unlocked };
+      }
+    } catch { /* fall through */ }
+    return { level: 1, unlocked: 1 };
+  }
+  function saveLevels() {
+    store.set(KEY_LEVELS, JSON.stringify({ level, unlocked }));
+  }
+  function loadBest() {
+    const n = Number(store.get(KEY_BEST));
+    return isInt(n, 0, 1e12) ? n : 0;
+  }
+
+  // ---------- Audio (Web Audio synth) ----------
+  const audio = {
+    ctx: null,
+    muted: store.get(KEY_MUTED) === '1',
+    unlock() {
+      if (!this.ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        try { this.ctx = new AC(); } catch { return; }
+      }
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    },
+    tone(freq, start, dur, type = 'sine', vol = 0.12, slideTo = 0) {
+      if (this.muted || !this.ctx) return;
+      const ctx = this.ctx;
+      const t = ctx.currentTime + start;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + dur + 0.03);
+    },
+    pick() { this.tone(880, 0, 0.04, 'triangle', 0.05); },
+    drop() {
+      this.tone(240, 0, 0.09, 'square', 0.05, 120);
+      this.tone(120, 0, 0.12, 'sine', 0.12, 70);
+    },
+    invalid() { this.tone(180, 0, 0.12, 'triangle', 0.06, 140); },
+    clear(lines) {
+      const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568];
+      for (let i = 0; i < Math.min(notes.length, lines + 2); i++) this.tone(notes[i], i * 0.06, 0.22, 'triangle', 0.1);
+    },
+    combo(n) {
+      const base = 523.25 * Math.pow(2, Math.min(n, 10) / 12);
+      [0, 4, 7, 12, 16].forEach((st, i) => this.tone(base * Math.pow(2, st / 12), i * 0.05, 0.2, 'square', 0.05));
+      this.tone(base * 2, 0.25, 0.35, 'triangle', 0.08);
+    },
+    levelUp() {
+      [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => this.tone(f, i * 0.08, 0.25, 'square', 0.05));
+      [523.25, 659.25, 783.99].forEach(f => this.tone(f * 2, 0.45, 0.6, 'triangle', 0.07));
+    },
+    gameOver() {
+      this.tone(392, 0, 0.9, 'sawtooth', 0.06, 98);
+      [392, 330, 262, 196].forEach((f, i) => this.tone(f, i * 0.18, 0.3, 'triangle', 0.08));
+    },
+  };
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const boardEl = $('board'), trayEl = $('tray');
+  const scoreEl = $('score'), bestEl = $('best'), comboEl = $('combo');
+  const overlay = $('overlay');
+  const cellEls = [];
+  for (let r = 0; r < N; r++) {
+    const row = [];
+    for (let c = 0; c < N; c++) {
+      const d = document.createElement('div');
+      d.className = 'cell';
+      boardEl.append(d);
+      row.push(d);
+    }
+    cellEls.push(row);
+  }
+  const slotEls = [0, 1, 2].map(i => {
+    const s = document.createElement('div');
+    s.className = 'slot';
+    s.dataset.slot = String(i);
+    s.addEventListener('pointerdown', e => startDrag(e, i));
+    trayEl.append(s);
+    return s;
+  });
+
+  const flashing = new Set();
+  let preview = null; // { cells: Set<"r,c">, color, rows: Set, cols: Set }
+
+  function renderBoard() {
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const key = r + ',' + c;
+        const v = board[r][c];
+        let cls = 'cell';
+        if (v !== null) cls += ' filled c' + v + (v === STONE ? ' stone' : '');
+        else if (preview && preview.cells.has(key)) cls += ' ghost c' + preview.color;
+        if (preview && (preview.rows.has(r) || preview.cols.has(c))) cls += ' will-clear';
+        if (flashing.has(key)) cls += ' flash';
+        if (cellEls[r][c].className !== cls) cellEls[r][c].className = cls;
+      }
+    }
+  }
+  function buildPiece(p, big) {
+    const { h, w } = shapeSize(p.cells);
+    const unit = big ? 'var(--cell)' : 'var(--mini)';
+    const el = document.createElement('div');
+    el.className = 'piece' + (big ? ' big' : '');
+    el.style.gridTemplateColumns = `repeat(${w}, ${unit})`;
+    el.style.gridTemplateRows = `repeat(${h}, ${unit})`;
+    for (const [r, c] of p.cells) {
+      const d = document.createElement('div');
+      d.className = 'pc filled c' + p.color;
+      d.style.gridRow = String(r + 1);
+      d.style.gridColumn = String(c + 1);
+      el.append(d);
+    }
+    return el;
+  }
+  function renderTray() {
+    tray.forEach((p, i) => {
+      const s = slotEls[i];
+      s.replaceChildren();
+      s.classList.toggle('has-piece', !!p);
+      s.classList.toggle('nofit', !!p && !pieceFits(p));
+      s.classList.toggle('spin', !!p && !!p.spin);
+      if (p) s.append(buildPiece(p, false));
+    });
+  }
+  function renderStats() {
+    scoreEl.textContent = String(score);
+    bestEl.textContent = String(best);
+    comboEl.textContent = combo > 0 ? 'x' + combo : '–';
+    comboEl.classList.toggle('on', combo > 1);
+  }
+  const levelDownBtn = $('levelDown'), levelUpBtn = $('levelUp');
+  function renderLevel() {
+    const left = stonesLeft();
+    $('levelNum').textContent = 'Level ' + level;
+    $('stonesLeft').textContent = left === 0 ? 'Complete!' : left + (left === 1 ? ' stone left' : ' stones left');
+    levelDownBtn.disabled = advancing || level <= 1;
+    levelUpBtn.disabled = advancing || level >= unlocked;
+  }
+  function renderAll() { renderBoard(); renderTray(); renderStats(); renderLevel(); }
+
+  // ---------- Effects ----------
+  const fx = $('fx');
+  const fxCtx = fx.getContext('2d');
+  let particles = [];
+  let fxRunning = false;
+  function resizeFx() {
+    const dpr = window.devicePixelRatio || 1;
+    fx.width = Math.round(window.innerWidth * dpr);
+    fx.height = Math.round(window.innerHeight * dpr);
+    fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeFx);
+  resizeFx();
+
+  function burst(x, y, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 4;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, life: 1, size: 3 + Math.random() * 5, color });
+    }
+    if (!fxRunning) { fxRunning = true; requestAnimationFrame(stepFx); }
+  }
+  function stepFx() {
+    fxCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.vx *= 0.98; p.life -= 0.022;
+      fxCtx.globalAlpha = Math.max(0, p.life);
+      fxCtx.fillStyle = p.color;
+      fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    fxCtx.globalAlpha = 1;
+    if (particles.length) requestAnimationFrame(stepFx);
+    else { fxRunning = false; fxCtx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
+  }
+  function floatText(text, x, y, extraClass) {
+    const el = document.createElement('div');
+    el.className = 'float' + (extraClass ? ' ' + extraClass : '');
+    el.textContent = text;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    document.body.append(el);
+    el.addEventListener('animationend', () => el.remove());
+    setTimeout(() => el.remove(), 1500);
+  }
+  function cellCenter(r, c) {
+    const rect = cellEls[r][c].getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  // ---------- Placement & scoring ----------
+  function placePiece(i, r0, c0) {
+    const p = tray[i];
+    for (const [r, c] of p.cells) board[r0 + r][c0 + c] = p.color;
+    tray[i] = null;
+    levelMoves += 1;
+
+    let gained = p.cells.length;
+    const { rows, cols } = fullLines(board);
+    const lines = rows.length + cols.length;
+    const { h, w } = shapeSize(p.cells);
+    const center = cellCenter(r0 + Math.floor((h - 1) / 2), c0 + Math.floor((w - 1) / 2));
+
+    if (lines > 0) {
+      combo += 1;
+      movesSinceClear = 0;
+      gained += 10 * lines * lines * combo;
+
+      const cleared = new Set();
+      rows.forEach(r => { for (let c = 0; c < N; c++) cleared.add(r + ',' + c); });
+      cols.forEach(c => { for (let r = 0; r < N; r++) cleared.add(r + ',' + c); });
+      for (const key of cleared) {
+        const [r, c] = key.split(',').map(Number);
+        const pt = cellCenter(r, c);
+        burst(pt.x, pt.y, board[r][c] === STONE ? STONE_COLOR : PALETTE[board[r][c]], 6);
+        board[r][c] = null;
+        flashing.add(key);
+      }
+      setTimeout(() => { for (const k of cleared) flashing.delete(k); renderBoard(); }, 460);
+
+      if (board.every(row => row.every(v => v === null))) {
+        gained += 300;
+        const mid = boardEl.getBoundingClientRect();
+        floatText('Board clear! +300', mid.left + mid.width / 2, mid.top + mid.height / 2, 'combo');
+      }
+      if (combo > 1) {
+        audio.combo(combo);
+        floatText('Combo x' + combo, center.x, center.y - 36, 'combo');
+      } else {
+        audio.clear(lines);
+      }
+    } else {
+      movesSinceClear += 1;
+      if (movesSinceClear >= COMBO_WINDOW) combo = 0;
+      audio.drop();
+    }
+
+    score += gained;
+    floatText('+' + gained, center.x, center.y);
+    if (score > best) { best = score; store.set(KEY_BEST, String(best)); }
+
+    if (stonesLeft() === 0) { completeLevel(); return; }
+    if (tray.every(x => x === null)) tray = newBatch();
+    renderAll();
+    if (!tray.some(x => x && pieceFits(x))) endGame();
+    else saveState();
+  }
+
+  function completeLevel() {
+    const bonus = 100 * level;
+    score += bonus;
+    if (score > best) { best = score; store.set(KEY_BEST, String(best)); }
+    unlocked = Math.max(unlocked, Math.min(level + 1, MAX_LEVEL));
+    saveLevels();
+    saveState(); // a reload during the pause still finds a finished board and moves on
+    advancing = true;
+    renderAll();
+    const mid = boardEl.getBoundingClientRect();
+    floatText(`Level ${level} complete! +${bonus}`, mid.left + mid.width / 2, mid.top + mid.height / 2, 'combo');
+    audio.levelUp();
+    advanceTimer = setTimeout(() => startLevel(Math.min(level + 1, MAX_LEVEL), true), 900);
+  }
+
+  // carryScore: true when arriving by finishing the previous level, so a run of levels adds up.
+  function startLevel(n, carryScore = false) {
+    cancelDrag();
+    clearTimeout(advanceTimer);
+    advancing = false;
+    level = n;
+    saveLevels();
+    board = levelLayout(n);
+    if (!carryScore) { score = 0; bestAtStart = best; }
+    combo = 0;
+    movesSinceClear = 0;
+    levelMoves = 0;
+    gameOver = false;
+    tray = newBatch();
+    overlay.classList.remove('show');
+    saveState();
+    renderAll();
+  }
+
+  function leaveLevelOk(question) {
+    return gameOver || levelMoves === 0 || window.confirm(question);
+  }
+  function switchLevel(delta) {
+    const target = level + delta;
+    if (advancing || target < 1 || target > unlocked) return;
+    if (!leaveLevelOk(`Leave level ${level}? This attempt will be lost.`)) return;
+    startLevel(target);
+  }
+
+  function endGame() {
+    gameOver = true;
+    store.remove(KEY_STATE);
+    $('goLevel').textContent = 'Level ' + level;
+    $('restartBtn').textContent = 'Retry level ' + level;
+    $('finalScore').textContent = String(score);
+    $('finalBest').textContent = String(best);
+    $('newBest').hidden = !(score > bestAtStart && score > 0);
+    setTimeout(() => {
+      if (!gameOver) return;
+      audio.gameOver();
+      overlay.classList.add('show');
+      $('restartBtn').focus();
+    }, 450);
+  }
+
+  // ---------- Drag & drop (pointer events: mouse, touch, pen) ----------
+  let drag = null;
+
+  function startDrag(e, i) {
+    if (gameOver || advancing || drag || !tray[i]) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    audio.unlock();
+    const el = buildPiece(tray[i], true);
+    el.classList.add('drag');
+    document.body.append(el);
+    const rect = el.getBoundingClientRect();
+    const touchLift = e.pointerType === 'mouse' ? 0 : rect.height / 2 + 48;
+    drag = { i, el, pointerId: e.pointerId, dx: -rect.width / 2, dy: -rect.height / 2 - touchLift, target: null,
+      x0: e.clientX, y0: e.clientY, moved: false };
+    slotEls[i].classList.add('dragging');
+    try { slotEls[i].setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    audio.pick();
+    moveDrag(e);
+  }
+
+  function moveDrag(e) {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > TAP_SLOP) drag.moved = true;
+    const x = e.clientX + drag.dx;
+    const y = e.clientY + drag.dy;
+    drag.el.style.transform = `translate(${x}px, ${y}px)`;
+
+    const c0 = cellEls[0][0].getBoundingClientRect();
+    const pitch = cellEls[0][1].getBoundingClientRect().left - c0.left;
+    const row = Math.round((y - c0.top) / pitch);
+    const col = Math.round((x - c0.left) / pitch);
+    const cells = tray[drag.i].cells;
+    const target = canPlace(cells, row, col) ? { r: row, c: col } : null;
+    const same = (target && drag.target && target.r === drag.target.r && target.c === drag.target.c) || (!target && !drag.target);
+    if (same) return;
+    drag.target = target;
+    setPreview(target ? { cells, color: tray[drag.i].color, r0: row, c0: col } : null);
+  }
+
+  function setPreview(p) {
+    if (!p) { preview = null; renderBoard(); return; }
+    const sim = board.map(row => row.slice());
+    const keys = new Set();
+    for (const [r, c] of p.cells) { sim[p.r0 + r][p.c0 + c] = p.color; keys.add((p.r0 + r) + ',' + (p.c0 + c)); }
+    const { rows, cols } = fullLines(sim);
+    preview = { cells: keys, color: p.color, rows: new Set(rows), cols: new Set(cols) };
+    renderBoard();
+  }
+
+  function endDrag(e) {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const { i, el, target, moved } = drag;
+    drag = null;
+    preview = null;
+    if (!moved && e.type === 'pointerup') {
+      // A tap never places a piece; on a rotatable piece it turns it a quarter clockwise.
+      el.remove();
+      slotEls[i].classList.remove('dragging');
+      renderBoard();
+      if (tray[i].spin) {
+        tray[i] = { ...tray[i], cells: rotateCW(tray[i].cells) };
+        audio.pick();
+        renderTray();
+        saveState();
+      }
+    } else if (target && e.type === 'pointerup') {
+      el.remove();
+      slotEls[i].classList.remove('dragging');
+      placePiece(i, target.r, target.c);
+    } else {
+      renderBoard();
+      if (e.type === 'pointerup') audio.invalid();
+      returnToTray(el, i);
+    }
+  }
+
+  function returnToTray(el, i) {
+    const slot = slotEls[i];
+    const home = slot.querySelector('.piece');
+    if (!home) { el.remove(); slot.classList.remove('dragging'); return; }
+    const r = home.getBoundingClientRect();
+    el.classList.add('returning');
+    el.style.transform = `translate(${r.left}px, ${r.top}px) scale(0.5)`;
+    setTimeout(() => { el.remove(); slot.classList.remove('dragging'); }, 230);
+  }
+
+  function cancelDrag() {
+    if (!drag) return;
+    const { i, el } = drag;
+    drag = null;
+    preview = null;
+    el.remove();
+    slotEls[i].classList.remove('dragging');
+  }
+
+  window.addEventListener('pointermove', moveDrag);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  window.addEventListener('blur', () => { if (drag) { const { i, el } = drag; drag = null; preview = null; renderBoard(); returnToTray(el, i); } });
+
+  // ---------- Controls ----------
+  const muteBtn = $('muteBtn');
+  function renderMute() {
+    muteBtn.textContent = audio.muted ? '🔇' : '🔊';
+    muteBtn.setAttribute('aria-pressed', String(audio.muted));
+  }
+  muteBtn.addEventListener('click', () => {
+    audio.muted = !audio.muted;
+    store.set(KEY_MUTED, audio.muted ? '1' : '0');
+    audio.unlock();
+    renderMute();
+  });
+  $('newBtn').addEventListener('click', () => {
+    if (advancing || !leaveLevelOk(`Restart level ${level}? This attempt will be lost.`)) return;
+    startLevel(level);
+  });
+  $('restartBtn').addEventListener('click', () => { audio.unlock(); startLevel(level); });
+  levelDownBtn.addEventListener('click', () => switchLevel(-1));
+  levelUpBtn.addEventListener('click', () => switchLevel(+1));
+
+  // ---------- Init ----------
+  best = loadBest();
+  renderMute();
+  ({ level, unlocked } = loadLevels());
+  const saved = loadState(); // after loadLevels: a saved game can't be on a level that isn't unlocked
+  if (saved) {
+    ({ board, tray, score, combo, movesSinceClear, level } = saved);
+    levelMoves = saved.moves;
+    gameOver = false;
+    bestAtStart = best;
+    if (score > best) { best = score; store.set(KEY_BEST, String(best)); }
+    if (stonesLeft() === 0) {
+      // Saved right after finishing the level (e.g. reloaded during the pause): move on.
+      unlocked = Math.max(unlocked, Math.min(level + 1, MAX_LEVEL));
+      startLevel(Math.min(level + 1, MAX_LEVEL), true);
+    } else {
+      saveLevels();
+      renderAll();
+      if (!tray.some(x => x && pieceFits(x))) endGame();
+    }
+  } else {
+    startLevel(level);
+  }
+
+  // ---------- Offline support (service workers need https or localhost) ----------
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* game still works online */ });
+    });
+  }
+})();
+</script>
+</body>
+</html>
